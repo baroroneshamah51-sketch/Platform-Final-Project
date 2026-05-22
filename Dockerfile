@@ -13,7 +13,6 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 
 RUN { \
@@ -28,27 +27,33 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-
+# Copy dependency files first — layer is cached until composer files change
 COPY composer.json composer.lock symfony.lock importmap.php ./
 
-
+# Download packages only, no autoloader/scripts yet
 RUN composer install \
     --no-dev \
-    --optimize-autoloader \
+    --no-autoloader \
     --no-scripts \
     --no-interaction \
     --prefer-dist
 
+# Copy full application
 COPY . .
 
-RUN composer dump-autoload --optimize --no-dev
+# Set build-time env vars so Symfony console commands work without a real DB
+ENV APP_ENV=prod
+ENV APP_SECRET=build-placeholder
+ENV DATABASE_URL="mysql://placeholder:placeholder@placeholder:3306/placeholder?serverVersion=8.0.32&charset=utf8mb4"
 
-RUN APP_ENV=prod APP_SECRET=build-placeholder \
-        php bin/console assets:install --no-debug \
-    && APP_ENV=prod APP_SECRET=build-placeholder \
-        php bin/console importmap:install --no-debug \
-    && APP_ENV=prod APP_SECRET=build-placeholder \
-        php bin/console cache:clear --no-debug
+# Generate optimized autoloader WITH scripts — this triggers the symfony/runtime
+# plugin via post-autoload-dump, creating vendor/autoload_runtime.php,
+# and runs assets:install, importmap:install, cache:clear via composer scripts
+RUN composer install \
+    --no-dev \
+    --optimize-autoloader \
+    --no-interaction \
+    --prefer-dist
 
 RUN chown -R www-data:www-data var \
     && chmod -R 775 var
