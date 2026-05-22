@@ -25,6 +25,8 @@ RUN { \
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
+ENV COMPOSER_ALLOW_SUPERUSER=1
+
 WORKDIR /var/www/html
 
 # Copy dependency files first — layer is cached until composer files change
